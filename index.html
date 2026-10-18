@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Afinador</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Afinador">
+<meta name="theme-color" content="#121316">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' fill='%23121316'/%3E%3Cpath d='M30 120a60 60 0 0 1 120 0' fill='none' stroke='%233a3d45' stroke-width='10' stroke-linecap='round'/%3E%3Cpath d='M90 120 L112 66' stroke='%2334d27b' stroke-width='9' stroke-linecap='round'/%3E%3Ccircle cx='90' cy='120' r='10' fill='%2334d27b'/%3E%3C/svg%3E">
+<style>
+  /* Pantalla única: lectura grande arriba, aguja, cuerdas abajo al alcance del pulgar */
+  :root {
+    --bg: #f3f4f6; --panel: #ffffff; --fg: #15171c; --muted: #6b7080; --line: #d5d8df;
+    --ok: #12a150; --near: #c98a00; --far: #d93b30;
+    --ok-dim: #8fcfaa; --near-dim: #e6c77a; --far-dim: #eda39d;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    --sans: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121316; --panel: #1c1e23; --fg: #eef0f4; --muted: #8a8f9c; --line: #343741;
+      --ok: #34d27b; --near: #ffcc33; --far: #ff5a4f;
+      --ok-dim: #1f6b43; --near-dim: #7a6418; --far-dim: #7a2e29;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #121316; --panel: #1c1e23; --fg: #eef0f4; --muted: #8a8f9c; --line: #343741;
+    --ok: #34d27b; --near: #ffcc33; --far: #ff5a4f;
+    --ok-dim: #1f6b43; --near-dim: #7a6418; --far-dim: #7a2e29;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.4 var(--sans);
+    -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none;
+    padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  main {
+    max-width: 480px; margin: 0 auto; min-height: 100%;
+    display: flex; flex-direction: column; gap: 14px; padding-block: 12px 16px;
+  }
+  .bar { display: flex; gap: 10px; align-items: end; }
+  .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .field.grow { flex: 1; }
+  label { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  select, input {
+    font: inherit; font-size: 16px; color: var(--fg); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%;
+  }
+  input#a4 { width: 92px; font-variant-numeric: tabular-nums; }
+
+  .readout { text-align: center; padding-top: 6px; }
+  #note { font: 700 112px/1 var(--sans); letter-spacing: -.03em; color: var(--muted); transition: color .15s; }
+  #note sup { font-size: .38em; font-weight: 600; vertical-align: .9em; margin-left: 2px; }
+  #cents { font: 600 22px/1.2 var(--mono); font-variant-numeric: tabular-nums; min-height: 1.2em; color: var(--muted); }
+  #hint { font-size: 17px; font-weight: 600; min-height: 1.4em; margin-top: 4px; }
+  #info { font: 13px/1.4 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; min-height: 1.4em; }
+
+  canvas { width: 100%; max-width: 100%; aspect-ratio: 2 / 1.08; display: block; }
+
+  #strings { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  #strings.four { grid-template-columns: repeat(4, 1fr); }
+  #strings button {
+    font: inherit; color: var(--fg); background: var(--panel); border: 1.5px solid var(--line);
+    border-radius: 12px; padding: 8px 0 6px; display: flex; flex-direction: column; align-items: center;
+    gap: 1px; cursor: pointer; min-width: 0;
+  }
+  #strings b { font-size: 20px; }
+  #strings small { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  #strings button.sel { border-color: var(--near); }
+  #strings button.ok { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, var(--panel)); }
+  #strings button.locked { box-shadow: inset 0 0 0 2px var(--fg); }
+  .lockhint { font-size: 12px; color: var(--muted); text-align: center; margin-top: -6px; }
+
+  #start {
+    margin-top: auto; font: 600 18px var(--sans); border: 0; border-radius: 14px; padding: 16px;
+    background: var(--ok); color: #fff; cursor: pointer;
+  }
+  #start.on { background: var(--panel); color: var(--fg); border: 1.5px solid var(--line); }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { #note { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="bar">
+    <div class="field grow">
+      <label for="tuning">Afinación</label>
+      <select id="tuning"></select>
+    </div>
+    <div class="field">
+      <label for="a4">La (Hz)</label>
+      <input id="a4" type="number" inputmode="decimal" min="400" max="480" step="0.1" value="440">
+    </div>
+  </div>
+
+  <div class="readout">
+    <div id="note">--</div>
+    <div id="cents"></div>
+    <div id="hint"></div>
+    <div id="info">Pulsa «Empezar a afinar» y permite el micrófono.</div>
+  </div>
+
+  <canvas id="meter" aria-label="Indicador de desafinación en cents"></canvas>
+
+  <div id="strings"></div>
+  <div class="lockhint">Toca una cuerda para fijarla; tócala otra vez para volver a modo automático.</div>
+
+  <button id="start" type="button">Empezar a afinar</button>
+</main>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const NOTE = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  const SEMI = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  const TUNINGS = {
+    "Estándar (E A D G B E)": "E2 A2 D3 G3 B3 E4", "Medio tono abajo (Eb)": "D#2 G#2 C#3 F#3 A#3 D#4",
+    "D estándar": "D2 G2 C3 F3 A3 D4", "C# estándar": "C#2 F#2 B2 E3 G#3 C#4", "C estándar": "C2 F2 A#2 D#3 G3 C4",
+    "B estándar": "B1 E2 A2 D3 F#3 B3", "Drop D": "D2 A2 D3 G3 B3 E4", "Drop C#": "C#2 G#2 C#3 F#3 A#3 D#4",
+    "Drop C": "C2 G2 C3 F3 A3 D4", "Drop B": "B1 F#2 B2 E3 G#3 C#4", "Drop A": "A1 E2 A2 D3 F#3 B3",
+    "DADGAD": "D2 A2 D3 G3 A3 D4", "Open D": "D2 A2 D3 F#3 A3 D4", "Open G": "D2 G2 D3 G3 B3 D4",
+    "Open E": "E2 B2 E3 G#3 B3 E4", "Bajo 4 cuerdas": "E1 A1 D2 G2",
+  };
+  const midiOf = n => { const m = /^([A-G])([#b]?)(-?\d)$/.exec(n);
+    return 12 * (+m[3] + 1) + SEMI[m[1]] + (m[2] === "#" ? 1 : m[2] === "b" ? -1 : 0); };
+  const freqOf = (m, a4) => a4 * 2 ** ((m - 69) / 12);
+  const cents = (f, t) => 1200 * Math.log2(f / t);
+  const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const store = {
+    get(k) { try { return localStorage.getItem("afinador." + k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem("afinador." + k, v); } catch {} },
+  };
+
+  // parámetros de estabilidad (mismos que la app de escritorio)
+  const GATE = 0.004, ONSET = 1.8, ATTACK = 0.12, DECAY = 0.12, CLARITY = 0.85,
+        JUMP = 35, CONFIRM = 3, ALPHA = 0.25, HOLD = 2.5, IN_TUNE = 3;
+
+  let strings = [], locked = null, ctx = null, analyser = null, stream = null, sr = 48000, buf = null, wake = null;
+  const S = { hist: [], fs: null, peak: 0, prev: 0, onset: 0, lastGood: 0, pending: [] };
+  const reset = () => Object.assign(S, { hist: [], fs: null, peak: 0, prev: 0, onset: 0, lastGood: 0, pending: [] });
+
+  const sel = $("#tuning"), a4in = $("#a4");
+  sel.innerHTML = Object.keys(TUNINGS).map(k => `<option>${esc(k)}</option>`).join("");
+  const savedT = store.get("tuning"); if (savedT && TUNINGS[savedT]) sel.value = savedT;
+  const savedA = parseFloat(store.get("a4")); if (savedA > 400 && savedA < 480) a4in.value = savedA;
+  const a4 = () => { const v = parseFloat(a4in.value); return v > 400 && v < 480 ? v : 440; };
+
+  function setTuning() {
+    strings = TUNINGS[sel.value].split(" ").map(n => ({ name: n.replace(/-?\d/, ""), midi: midiOf(n) }));
+    $("#strings").classList.toggle("four", strings.length === 4);
+    locked = null; reset(); renderStrings(); store.set("tuning", sel.value);
+  }
+  let lastKey = "";
+  function renderStrings(idx = null, ok = false) {
+    const key = [sel.value, a4(), idx, ok, locked].join("|");
+    if (key === lastKey) return;
+    lastKey = key;
+    const n = strings.length;
+    $("#strings").innerHTML = strings.map((s, i) =>
+      `<button type="button" data-i="${i}" class="${i === idx ? (ok ? "ok" : "sel") : ""} ${i === locked ? "locked" : ""}">
+        <b>${s.name}</b><small>${n - i}ª · ${freqOf(s.midi, a4()).toFixed(1)}</small></button>`).join("");
+  }
+  $("#strings").onclick = e => {
+    const b = e.target.closest("button[data-i]");
+    if (!b) return;
+    locked = locked === +b.dataset.i ? null : +b.dataset.i;
+    reset(); renderStrings(); if (!stream) draw(null);
+  };
+  sel.onchange = () => { setTuning(); if (!stream) draw(null); };
+  a4in.onchange = () => { store.set("a4", a4()); renderStrings(); };
+  setTuning();
+
+  async function keepAwake() {
+    try { wake = await navigator.wakeLock?.request("screen"); } catch { wake = null; }
+  }
+
+  $("#start").onclick = async () => {
+    if (stream) { stop(); return; }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      $("#info").textContent = "Este navegador no deja usar el micrófono aquí. Abre la página con https:// en Safari.";
+      return;
+    }
+    try {
+      // en iOS el AudioContext debe crearse y reanudarse dentro del toque
+      ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state !== "running") await ctx.resume();
+      stream = await navigator.mediaDevices.getUserMedia({ audio: {
+        echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      const src = ctx.createMediaStreamSource(stream);
+      analyser = ctx.createAnalyser();
+      analyser.fftSize = 16384;
+      src.connect(analyser);
+      sr = ctx.sampleRate;
+      buf = new Float32Array(analyser.fftSize);
+      $("#start").textContent = "Parar"; $("#start").classList.add("on");
+      reset(); keepAwake(); loop();
+    } catch (err) {
+      stream = null;
+      $("#info").textContent = err.name === "NotAllowedError"
+        ? "Permiso de micrófono denegado. Actívalo en Ajustes › Safari › Micrófono."
+        : "No se pudo usar el micrófono: " + err.message;
+    }
+  };
+  function stop() {
+    stream?.getTracks().forEach(t => t.stop());
+    stream = null; analyser = null;
+    wake?.release().catch(() => {}); wake = null;
+    $("#start").textContent = "Empezar a afinar"; $("#start").classList.remove("on");
+    draw(null);
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && stream) stop();
+  });
+
+  // YIN sobre señal diezmada x2 (suficiente para fundamentales < 500 Hz)
+  function yin(x, rate, fmin = 28, fmax = 500, thr = 0.12) {
+    const n = x.length >> 1, y = new Float32Array(n);
+    let mean = 0;
+    for (let i = 0; i < n; i++) { y[i] = 0.5 * (x[2 * i] + x[2 * i + 1]); mean += y[i]; }
+    mean /= n;
+    for (let i = 0; i < n; i++) y[i] -= mean;
+    const r = rate / 2, tmax = Math.floor(r / fmin), tmin = Math.max(2, Math.floor(r / fmax));
+    const W = n - tmax;
+    if (W < tmax) return [null, 0];
+    const d = new Float32Array(tmax + 1);
+    for (let t = 1; t <= tmax; t++) {
+      let s = 0;
+      for (let i = 0; i < W; i++) { const v = y[i] - y[i + t]; s += v * v; }
+      d[t] = s;
+    }
+    const c = new Float32Array(tmax + 1); c[0] = 1;
+    let run = 0;
+    for (let t = 1; t <= tmax; t++) { run += d[t]; c[t] = run > 0 ? d[t] * t / run : 1; }
+    let tau = -1;
+    for (let t = tmin; t < tmax; t++) {
+      if (c[t] < thr) { while (t + 1 < tmax && c[t + 1] < c[t]) t++; tau = t; break; }
+    }
+    if (tau < 0) {
+      let best = tmin;
+      for (let t = tmin; t < tmax; t++) if (c[t] < c[best]) best = t;
+      if (c[best] < 0.3) tau = best;
+    }
+    if (tau < 2 || tau >= tmax) return [null, 0];
+    const a = c[tau - 1], b = c[tau], cc = c[tau + 1], den = a - 2 * b + cc;
+    const sh = Math.abs(den) > 1e-12 ? Math.max(-1, Math.min(1, 0.5 * (a - cc) / den)) : 0;
+    return [r / (tau + sh), 1 - b];
+  }
+
+  function hold(now) {
+    if (S.fs && now - S.lastGood < HOLD) draw(S.fs, true);
+    else { S.fs = null; S.hist = []; draw(null); }
+  }
+
+  let lastRun = 0;
+  function loop(ts = 0) {
+    if (!analyser) return;
+    requestAnimationFrame(loop);
+    if (ts - lastRun < 45) return;
+    lastRun = ts;
+    const now = ts / 1000;
+    analyser.getFloatTimeDomainData(buf);
+    let e = 0;
+    for (let i = buf.length - 2048; i < buf.length; i++) e += buf[i] * buf[i];
+    const level = Math.sqrt(e / 2048);
+    if (level > GATE && (level > S.prev * ONSET || S.peak < GATE)) {
+      S.peak = level; S.onset = now; S.hist = []; S.pending = [];
+    }
+    S.prev = level; S.peak = Math.max(S.peak, level);
+    if (!(level > GATE && level > S.peak * DECAY)) { if (level < GATE) S.peak = 0; return hold(now); }
+    if (now - S.onset < ATTACK) return hold(now);
+    const [f, cl] = yin(buf.subarray(buf.length - 8192), sr);
+    if (!f || cl < CLARITY) return hold(now);
+    if (S.hist.length && S.fs && Math.abs(cents(f, S.fs)) > JUMP) {
+      S.pending.push(f);
+      const last = S.pending.slice(-CONFIRM);
+      if (last.length < CONFIRM || Math.max(...last.map(p => Math.abs(cents(p, f)))) > JUMP) return hold(now);
+      S.hist = []; S.fs = null;
+    }
+    S.pending = [];
+    S.hist.push(f); S.hist = S.hist.slice(-7);
+    const med = [...S.hist].sort((p, q) => p - q)[S.hist.length >> 1];
+    S.fs = S.fs == null || S.hist.length === 1 ? med : S.fs * (med / S.fs) ** ALPHA;
+    S.lastGood = now;
+    draw(S.fs, false);
+  }
+
+  const cv = $("#meter"), g = cv.getContext("2d");
+  const tok = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  function fit() {
+    const dpr = window.devicePixelRatio || 1, r = cv.getBoundingClientRect();
+    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function noteHTML(name) {
+    return name.length > 1 ? `${name[0]}<sup>${name[1] === "#" ? "♯" : "♭"}</sup>` : name;
+  }
+
+  function draw(freq, held) {
+    const W = cv.width / (window.devicePixelRatio || 1), H = cv.height / (window.devicePixelRatio || 1);
+    const cx = W / 2, cy = H - 14, R = Math.min(W / 2 - 30, H - 34);
+    g.clearRect(0, 0, W, H);
+    const ok = tok("--ok"), line = tok("--line"), muted = tok("--muted");
+    for (let k = -50; k <= 50; k += 5) {
+      const ang = (90 - k * 1.8) * Math.PI / 180, major = k % 10 === 0, r1 = R - (major ? 16 : 9);
+      g.strokeStyle = Math.abs(k) <= IN_TUNE ? ok : line;
+      g.lineWidth = major ? 3 : 1.5; g.lineCap = "round";
+      g.beginPath(); g.moveTo(cx + r1 * Math.cos(ang), cy - r1 * Math.sin(ang));
+      g.lineTo(cx + R * Math.cos(ang), cy - R * Math.sin(ang)); g.stroke();
+      if (k % 25 === 0) {
+        g.fillStyle = muted; g.font = "12px " + tok("--mono"); g.textAlign = "center";
+        g.fillText(k ? (k > 0 ? "+" : "") + k : "0", cx + (R + 16) * Math.cos(ang), cy - (R + 16) * Math.sin(ang) + 4);
+      }
+    }
+    if (freq == null) {
+      $("#note").innerHTML = locked != null ? noteHTML(strings[locked].name) : "--";
+      $("#note").style.color = "";
+      $("#cents").textContent = ""; $("#hint").textContent = "";
+      $("#info").textContent = stream ? "Toca una cuerda…" : "Pulsa «Empezar a afinar» y permite el micrófono.";
+      renderStrings();
+      g.fillStyle = line; g.beginPath(); g.arc(cx, cy, 7, 0, 2 * Math.PI); g.fill();
+      return;
+    }
+    const A = a4();
+    const idx = locked ?? strings.reduce((bi, s, i) =>
+      Math.abs(cents(freq, freqOf(s.midi, A))) < Math.abs(cents(freq, freqOf(strings[bi].midi, A))) ? i : bi, 0);
+    const target = freqOf(strings[idx].midi, A), c = cents(freq, target), inTune = Math.abs(c) <= IN_TUNE;
+    const level = inTune ? "ok" : Math.abs(c) <= 15 ? "near" : "far";
+    const col = tok("--" + level + (held ? "-dim" : ""));
+    $("#note").innerHTML = noteHTML(strings[idx].name); $("#note").style.color = col;
+    $("#cents").textContent = `${c >= 0 ? "+" : ""}${c.toFixed(1)} cents`; $("#cents").style.color = col;
+    $("#hint").textContent = inTune ? "✔ Afinada" : c < 0 ? "▲ Sube (está grave)" : "▼ Baja (está aguda)";
+    $("#hint").style.color = col;
+    $("#info").textContent = `${freq.toFixed(2)} Hz · objetivo ${target.toFixed(2)} Hz` + (held ? " · última lectura" : "");
+    renderStrings(idx, inTune);
+    const cc = Math.max(-50, Math.min(50, c)), ang = (90 - cc * 1.8) * Math.PI / 180;
+    g.strokeStyle = col; g.lineWidth = 4; g.lineCap = "round";
+    g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + (R - 6) * Math.cos(ang), cy - (R - 6) * Math.sin(ang)); g.stroke();
+    g.fillStyle = col; g.beginPath(); g.arc(cx, cy, 7, 0, 2 * Math.PI); g.fill();
+  }
+
+  const redraw = () => { fit(); if (!stream) draw(null); };
+  window.addEventListener("resize", redraw);
+  matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", redraw);
+  redraw();
+})();
+</script>
+</body>
+</html>
